@@ -1,0 +1,150 @@
+# =============================================================================
+# OpenFMR Terminology Service — HAPI FHIR JPA Server Configuration
+# =============================================================================
+# This Spring Boot configuration file tunes the HAPI FHIR JPA Server
+# specifically for use as a Terminology Service. Key features:
+#
+#   • Connects to the dedicated ts-postgres database.
+#   • Enables all terminology service capabilities ($lookup, $validate-code,
+#     $expand, $translate, $subsumes).
+#   • Activates built-in terminology validation interceptors.
+#   • Configures Hibernate for high-throughput terminology indexing.
+#
+# Mount this file into the HAPI container at:
+#   /app/config/application.yaml
+# =============================================================================
+
+spring:
+  datasource:
+    # -------------------------------------------------------------------------
+    # Database Connection
+    # -------------------------------------------------------------------------
+    # Connects to the ts-postgres service on the internal Docker network.
+    # The hostname "ts-postgres" is resolved via Docker DNS within the
+    # openfmr_global_net network.
+    # -------------------------------------------------------------------------
+    url: "jdbc:postgresql://ts-postgres:5432/hapi_ts"
+    username: hapi_ts_user
+    password: hapi_ts_pass
+    driverClassName: org.postgresql.Driver
+
+  jpa:
+    properties:
+      hibernate:
+        # Use PostgreSQL-optimised dialect.
+        dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgresDialect
+        # ---------------------------------------------------------------------
+        # Hibernate Tuning for Terminology Indexing
+        # ---------------------------------------------------------------------
+        # Batch inserts/updates dramatically improve terminology upload speed.
+        # order_inserts and order_updates allow Hibernate to group similar
+        # statements together for more efficient database round-trips.
+        # ---------------------------------------------------------------------
+        format_sql: false
+        show_sql: false
+        jdbc:
+          batch_size: 100
+        order_inserts: true
+        order_updates: true
+        # Avoid excess schema validation overhead on startup.
+        hbm2ddl:
+          auto: update
+        search:
+          enabled: false
+
+  # ---------------------------------------------------------------------------
+  # Connection Pool (HikariCP)
+  # ---------------------------------------------------------------------------
+  # Terminology indexing creates many concurrent database connections.
+  # A larger pool prevents connection starvation during bulk imports.
+  # ---------------------------------------------------------------------------
+  datasource.hikari:
+    maximum-pool-size: 50
+    minimum-idle: 10
+    idle-timeout: 300000
+    max-lifetime: 600000
+    connection-timeout: 30000
+
+  batch:
+    # Disable Spring Batch auto-start (not used in this module).
+    job:
+      enabled: false
+
+# =============================================================================
+# HAPI FHIR Server Configuration
+# =============================================================================
+hapi:
+  fhir:
+    # -------------------------------------------------------------------------
+    # FHIR Version
+    # -------------------------------------------------------------------------
+    fhir_version: R4
+
+    # -------------------------------------------------------------------------
+    # Server Metadata
+    # -------------------------------------------------------------------------
+    server_address: "http://ts-fhir-server:8080/fhir"
+    defer_indexing_for_codesystems_of_size: 0
+
+    # -------------------------------------------------------------------------
+    # Terminology Services
+    # -------------------------------------------------------------------------
+    # Enable all terminology-related operations so that this server can act
+    # as a fully-functional Terminology Service for the OpenFMR HIE.
+    # -------------------------------------------------------------------------
+    terminology_services_enabled: true
+
+    # Allow pre-expanding ValueSets for faster $expand operations.
+    pre_expand_value_sets: true
+    pre_expand_value_sets_max_count: 50000
+
+    # -------------------------------------------------------------------------
+    # Validation
+    # -------------------------------------------------------------------------
+    # Enable the Repository Validating Interceptor so that incoming resources
+    # are validated against loaded CodeSystems and ValueSets.
+    # -------------------------------------------------------------------------
+    validation:
+      requests_enabled: true
+      responses_enabled: false
+
+    # -------------------------------------------------------------------------
+    # Bulk Operations & Performance
+    # -------------------------------------------------------------------------
+    # Configure sensible defaults for bulk data processing that align
+    # with the high-memory allocation of this server instance.
+    # -------------------------------------------------------------------------
+    max_page_size: 200
+    default_page_size: 50
+    allow_multiple_delete: true
+    reuse_cached_search_results_millis: 60000
+    retain_cached_searches_mins: 60
+
+    # -------------------------------------------------------------------------
+    # Narrative Generation
+    # -------------------------------------------------------------------------
+    # Disable narrative generation to save CPU during bulk terminology imports.
+    # -------------------------------------------------------------------------
+    narrative_enabled: false
+
+    # -------------------------------------------------------------------------
+    # CORS
+    # -------------------------------------------------------------------------
+    # Permit cross-origin requests so that other OpenFMR modules and
+    # external clients can query the Terminology Service.
+    # -------------------------------------------------------------------------
+    cors:
+      enabled: true
+      allowed_origins:
+        - "*"
+      allow_credentials: false
+
+    # -------------------------------------------------------------------------
+    # Logging
+    # -------------------------------------------------------------------------
+    logger:
+      enabled: true
+      name: "fhirtest.access"
+      format: "Path[${servletPath}] Source[${requestHeader.x-forwarded-for}] Operation[${operationType} ${operationName} ${idOrResourceName}] UA[${requestHeader.user-agent}] Params[${requestParameters}] ResponseEncoding[${responseEncodingNoDefault}]"
+      log_exceptions: true
+      error_format: "ERROR - ${requestVerb} ${requestUrl}"

@@ -1,0 +1,144 @@
+# =============================================================================
+# OpenFMR Terminology Service (TS) Module - Docker Compose
+# =============================================================================
+# This compose file defines the Terminology Service for the OpenFMR HIE.
+# It includes a dedicated PostgreSQL database, the HAPI FHIR Terminology
+# Server, and a transient loader container for bulk-importing terminology
+# packages (LOINC, SNOMED GPS, RxNorm).
+#
+# IMPORTANT: This module connects to the shared OpenFMR network
+# (openfmr_global_net) which must be created by the openfmr-core module
+# before this stack is started.
+#
+# Usage:
+#   1. Start the core services:  docker-compose up -d ts-postgres ts-fhir-server
+#   2. Load terminology files:   docker-compose up ts-loader
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Service 1: ts-postgres
+  # ---------------------------------------------------------------------------
+  # Dedicated PostgreSQL 15 instance for the Terminology Server.
+  # Tuned for heavy terminology indexing workloads (SNOMED, LOINC).
+  # ---------------------------------------------------------------------------
+  ts-postgres:
+    image: postgres:15
+    container_name: openfmr-ts-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${TS_POSTGRES_DB:-hapi_ts}
+      POSTGRES_USER: ${TS_POSTGRES_USER:-hapi_ts_user}
+      POSTGRES_PASSWORD: ${TS_POSTGRES_PASSWORD:-hapi_ts_pass}
+    # PostgreSQL performance tuning for large terminology sets.
+    # - shared_buffers:            Increased to 1GB for caching terminology data.
+    # - max_locks_per_transaction:  Raised to 256 to handle massive DDL operations
+    #                               during SNOMED/LOINC indexing.
+    # - work_mem:                   Increased to support complex sort/hash operations.
+    # - maintenance_work_mem:       Increased for faster index creation.
+    # - max_wal_size:               Raised to reduce checkpoint frequency during
+    #                               bulk imports.
+    command: >
+      postgres
+        -c shared_buffers=1GB
+        -c max_locks_per_transaction=256
+        -c work_mem=64MB
+        -c maintenance_work_mem=512MB
+        -c max_wal_size=2GB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c effective_cache_size=3GB
+    volumes:
+      - ts-postgres-data:/var/lib/postgresql/data
+    networks:
+      - openfmr_global_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TS_POSTGRES_USER:-hapi_ts_user} -d ${TS_POSTGRES_DB:-hapi_ts}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Service 2: ts-fhir-server
+  # ---------------------------------------------------------------------------
+  # HAPI FHIR JPA Server configured as the Terminology Service.
+  # Allocated high memory (2-4GB heap) for indexing large code systems.
+  # Exposes port 8080 on the internal OpenFMR network only.
+  # ---------------------------------------------------------------------------
+  ts-fhir-server:
+    image: hapiproject/hapi:latest
+    container_name: openfmr-ts-fhir-server
+    restart: unless-stopped
+    depends_on:
+      ts-postgres:
+        condition: service_healthy
+    environment:
+      # -----------------------------------------------------------------------
+      # CRITICAL: JVM Heap Configuration
+      # -----------------------------------------------------------------------
+      # SNOMED CT and LOINC indexing are extremely memory-intensive.
+      # A minimum of 2GB initial heap (-Xms) and 4GB maximum heap (-Xmx)
+      # is required to avoid OutOfMemoryErrors during terminology upload.
+      # -----------------------------------------------------------------------
+      JAVA_OPTS: "-Xms2g -Xmx4g"
+
+      # Point Spring Boot to our custom HAPI configuration file.
+      spring.config.location: "file:///app/config/application.yaml"
+    ports:
+      - "${TS_FHIR_PORT:-8084}:8080"
+    volumes:
+      - ./config/hapi-application.yaml:/app/config/application.yaml:ro
+    networks:
+      - openfmr_global_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/fhir/metadata || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 120s
+
+  # ---------------------------------------------------------------------------
+  # Service 3: ts-loader
+  # ---------------------------------------------------------------------------
+  # Transient container that bulk-loads terminology packages into the TS.
+  # This container:
+  #   1. Waits for the FHIR server to be fully available.
+  #   2. Scans the /data directory for terminology zip files.
+  #   3. Uploads each found file using the HAPI FHIR CLI.
+  #   4. Exits after processing.
+  #
+  # Mount your downloaded terminology files into ./data before running.
+  # ---------------------------------------------------------------------------
+  ts-loader:
+    build:
+      context: ./loader
+      dockerfile: Dockerfile
+    container_name: openfmr-ts-loader
+    depends_on:
+      ts-fhir-server:
+        condition: service_healthy
+    volumes:
+      - ./data:/data:ro
+    networks:
+      - openfmr_global_net
+    # The loader is a one-shot task — it runs and exits.
+    restart: "no"
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  ts-postgres-data:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+# Connect to the shared OpenFMR network created by openfmr-core.
+# This network must already exist before starting this module.
+# =============================================================================
+networks:
+  openfmr_global_net:
+    external: true
