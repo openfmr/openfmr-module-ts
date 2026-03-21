@@ -31,7 +31,7 @@ LABEL description="Terminology bulk-loader for the OpenFMR Terminology Service"
 # - curl:   Used to poll the FHIR server's /metadata endpoint.
 # - jq:     Useful for parsing FHIR JSON responses (optional but handy).
 # ---------------------------------------------------------------------------
-RUN apk add --no-cache bash curl jq
+RUN apk add --no-cache bash curl jq unzip
 
 # ---------------------------------------------------------------------------
 # HAPI FHIR CLI
@@ -46,12 +46,12 @@ ARG HAPI_CLI_VERSION=7.6.0
 ENV HAPI_CLI_JAR=/opt/hapi-fhir-cli.jar
 
 RUN curl -fSL \
-      "https://github.com/hapifhir/hapi-fhir/releases/download/v${HAPI_CLI_VERSION}/hapi-fhir-${HAPI_CLI_VERSION}-cli.tar.gz" \
-      -o /tmp/hapi-cli.tar.gz && \
-    tar -xzf /tmp/hapi-cli.tar.gz -C /opt/ && \
+      "https://github.com/hapifhir/hapi-fhir/releases/download/v${HAPI_CLI_VERSION}/hapi-fhir-${HAPI_CLI_VERSION}-cli.zip" \
+      -o /tmp/hapi-cli.zip && \
+    unzip -q /tmp/hapi-cli.zip -d /opt/ && \
     # The archive extracts a directory; find and rename the JAR for consistency.
     find /opt -name "hapi-fhir-cli.jar" -exec mv {} ${HAPI_CLI_JAR} \; && \
-    rm -rf /tmp/hapi-cli.tar.gz && \
+    rm -rf /tmp/hapi-cli.zip && \
     # Verify the JAR is present
     test -f ${HAPI_CLI_JAR} || (echo "ERROR: HAPI CLI JAR not found after extraction" && exit 1)
 
