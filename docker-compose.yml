@@ -92,12 +92,7 @@ services:
       - ./config/hapi-application.yaml:/app/config/application.yaml:ro
     networks:
       - openfmr_global_net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/fhir/metadata || exit 1"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 120s
+
 
   # ---------------------------------------------------------------------------
   # Service 3: ts-loader
@@ -118,7 +113,7 @@ services:
     container_name: openfmr-ts-loader
     depends_on:
       ts-fhir-server:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - ./data:/data:ro
     networks:
