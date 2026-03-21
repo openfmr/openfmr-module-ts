@@ -82,6 +82,9 @@ services:
       # A minimum of 2GB initial heap (-Xms) and 4GB maximum heap (-Xmx)
       # is required to avoid OutOfMemoryErrors during terminology upload.
       # -----------------------------------------------------------------------
+      hapi.fhir.tester.home.name: "OpenFMR TS"
+      hapi.fhir.tester.home.server_address: "http://ts-fhir-server:8080/fhir"
+      hapi.fhir.tester.home.fhir_version: "R4"
       JAVA_OPTS: "-Xms512m -Xmx1g"
 
       # Point Spring Boot to our custom HAPI configuration file.

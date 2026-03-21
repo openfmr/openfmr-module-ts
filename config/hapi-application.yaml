@@ -88,6 +88,12 @@ hapi:
     server_address: "http://ts-fhir-server:8080/fhir"
     defer_indexing_for_codesystems_of_size: 0
 
+    tester:
+      home:
+        name: OpenFMR TS
+        server_address: "http://ts-fhir-server:8080/fhir"
+        fhir_version: R4
+
     # -------------------------------------------------------------------------
     # Terminology Services
     # -------------------------------------------------------------------------
