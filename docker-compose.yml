@@ -68,7 +68,7 @@ services:
   # Exposes port 8080 on the internal OpenFMR network only.
   # ---------------------------------------------------------------------------
   ts-fhir-server:
-    image: hapiproject/hapi:latest
+    image: hapiproject/hapi:v6.10.1
     container_name: openfmr-ts-fhir-server
     restart: unless-stopped
     depends_on:
@@ -82,7 +82,7 @@ services:
       # A minimum of 2GB initial heap (-Xms) and 4GB maximum heap (-Xmx)
       # is required to avoid OutOfMemoryErrors during terminology upload.
       # -----------------------------------------------------------------------
-      JAVA_OPTS: "-Xms2g -Xmx4g"
+      JAVA_OPTS: "-Xms512m -Xmx1g"
 
       # Point Spring Boot to our custom HAPI configuration file.
       spring.config.location: "file:///app/config/application.yaml"
